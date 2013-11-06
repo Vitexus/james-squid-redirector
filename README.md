@@ -2,6 +2,7 @@ james-squid-redirector
 ======================
 
 an Squid Url redirect plugin/filter for static images cache
+
 At start read libconfig file /etc/james.conf to read sql and paths information  
 then read caching domain from database and rewrite urls from stdin to stdout
 
