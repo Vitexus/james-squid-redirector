@@ -12,6 +12,8 @@
 #include <libconfig.h++>
 #include <mysql++/mysql++.h>
 
+#include<fstream>
+
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -36,25 +38,26 @@ bool replace(string& str, const string& from, const string& to) {
  * Rozhoduje zdali se jedna o request na apple.com/success.html
  */
 bool isImage(string url) {
-    if (url.find("image?url=") != string::npos)
+    if (url.find("/image?url=") != string::npos)
         return true;
-    if (url.find(".png") != string::npos)
-        return true;
-    if (url.find(".jpeg") != string::npos)
-        return true;
-    if (url.find(".gif") != string::npos)
-        return true;
-    if (url.find(".jpg") != string::npos)
-        return true;
-    if (url.find(".PNG") != string::npos)
-        return true;
-    if (url.find(".JPEG") != string::npos)
-        return true;
-    if (url.find(".GIF") != string::npos)
-        return true;
-    if (url.find(".JPG") != string::npos)
-        return true;
-
+    /*
+        if (url.find(".png") != string::npos)
+            return true;
+        if (url.find(".jpeg") != string::npos)
+            return true;
+        if (url.find(".gif") != string::npos)
+            return true;
+        if (url.find(".jpg") != string::npos)
+            return true;
+        if (url.find(".PNG") != string::npos)
+            return true;
+        if (url.find(".JPEG") != string::npos)
+            return true;
+        if (url.find(".GIF") != string::npos)
+            return true;
+        if (url.find(".JPG") != string::npos)
+            return true;
+     */
     return false;
 }
 
@@ -111,7 +114,7 @@ string getServerIP(string interface) {
                     printf("getnameinfo() failed: %s\n", gai_strerror(s));
                     exit(EXIT_FAILURE);
                 }
-                address.assign( host) ;
+                address.assign(host);
             }
     }
 
@@ -121,10 +124,39 @@ string getServerIP(string interface) {
     return address;
 }
 
+string& str_replace(const string &search, const string &replace, string &subject) {
+    string buffer;
+
+    int sealeng = search.length();
+    int strleng = subject.length();
+
+    if (sealeng == 0)
+        return subject; //no change
+
+    for (int i = 0, j = 0; i < strleng; j = 0) {
+        while (i + j < strleng && j < sealeng && subject[i + j] == search[j])
+            j++;
+        if (j == sealeng)//found 'search'
+        {
+            buffer.append(replace);
+            i += sealeng;
+        } else {
+            buffer.append(&subject[i++], 1);
+        }
+    }
+    subject = buffer;
+    return subject;
+}
+
+bool checkexistance(string filename) {
+    ifstream file(filename.c_str());
+    return file.good();
+}
+
 int main() {
     Config cfg;
     mysqlpp::Connection sqlConn;
-    string landingPage, landingPageDomain, cacheUrl, dbname, dbhost, dblogin, dbpassw, protocol, interface, serverIP;
+    string landingPage, landingPageDomain, cachePath, dbname, dbhost, dblogin, dbpassw, protocol, interface, serverIP, webRoot, absCachePath;
 
     try {
         cfg.readFile("/etc/james.conf");
@@ -166,10 +198,16 @@ int main() {
     }
 
     try {
-        string cfgcacheurl = cfg.lookup("cachepath");
-        cacheUrl.assign(cfgcacheurl);
+        string cfgcachepath = cfg.lookup("cachepath");
+        cachePath.assign(cfgcachepath);
     } catch (const SettingNotFoundException &nfex) {
         cerr << "No 'cacheurl' setting in configuration file." << endl;
+    }
+    try {
+        string cfgwebroot = cfg.lookup("webroot");
+        webRoot.assign(cfgwebroot);
+    } catch (const SettingNotFoundException &nfex) {
+        cerr << "No 'webroot' setting in configuration file." << endl;
     }
 
     try {
@@ -179,6 +217,8 @@ int main() {
         cerr << "No 'interface' setting in configuration file." << endl;
     }
 
+    absCachePath = webRoot.append( cachePath );
+    
     if (sqlConn.connect(dbname.c_str(), dbhost.c_str(), dblogin.c_str(), dbpassw.c_str())) {
 
         string options_query = "SELECT * FROM `options` WHERE `key`='landingpage'";
@@ -211,13 +251,19 @@ int main() {
 
         size_t start_pos;
         string input;
-
+        string absfilepath;
         while (1) {
             cin >> input;
             start_pos = input.find(landingPageDomain);
             if ((start_pos != string::npos) && isImage(input)) {
                 protocol = getProtocol(input);
-                input = protocol.append("://").append(serverIP).append(cacheUrl).append(input.substr(input.find(landingPageDomain) + landingPageDomain.length() + 1));
+                string path = input.substr(input.find(landingPageDomain) + landingPageDomain.length() + 1);
+                path = str_replace("?", "%3f", path);
+                //TODO wget url enconding
+                //absfilepath.assign(absCachePath).append(path);
+                //if(checkexistance( absfilepath.c_str() ))
+                        input = protocol.append("://").append(serverIP).append(cachePath).append(path);
+                
             }
             cout << input << endl;
         }
